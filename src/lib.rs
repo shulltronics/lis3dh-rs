@@ -18,10 +18,12 @@ use accelerometer::error::Error as AccelerometerError;
 use accelerometer::vector::{F32x3, I16x3};
 use accelerometer::{Accelerometer, RawAccelerometer};
 
-use embedded_hal::blocking::i2c::{self, WriteRead};
-use embedded_hal::blocking::spi::{self, Transfer};
+use embedded_hal_02::blocking::i2c::{self, WriteRead};
+use embedded_hal_02::blocking::spi::{self, Transfer};
+use embedded_hal::i2c::I2c;
 
-use embedded_hal::digital::v2::OutputPin;
+// use embedded_hal_02::digital::v2::OutputPin;
+use embedded_hal::digital::OutputPin;
 
 mod interrupts;
 mod register;
@@ -67,9 +69,64 @@ pub struct Lis3dh<CORE> {
     core: CORE,
 }
 
-impl<I2C, E> Lis3dh<Lis3dhI2C<I2C>>
+// impl<I2C, E> Lis3dh<Lis3dhI2C<I2C>>
+// where
+//     I2C: WriteRead<Error = E> + i2c::Write<Error = E>,
+// {
+//     /// Create a new LIS3DH driver from the given I2C peripheral.
+//     /// Default is Hz_400 HighResolution.
+//     /// An example using the [nrf52840_hal](https://docs.rs/nrf52840-hal/latest/nrf52840_hal/index.html):
+//     ///
+//     ///     use nrf52840_hal::gpio::{Level, PushPull};
+//     ///     use lis3dh::Lis3dh;
+//     ///     
+//     ///     let peripherals = nrf52840_hal::pac::Peripherals::take().unwrap();
+//     ///     let pins = p0::Parts::new(peripherals.P0);
+//     ///     
+//     ///     let twim0_scl = pins.p0_31.into_floating_input().degrade();
+//     ///     let twim0_sda = pins.p0_30.into_floating_input().degrade();
+//     ///     
+//     ///     let i2c = nrf52840_hal::twim::Twim::new(
+//     ///         peripherals.TWIM0,
+//     ///         nrf52840_hal::twim::Pins {
+//     ///             scl: twim0_scl,
+//     ///             sda: twim0_sda,
+//     ///         },
+//     ///         nrf52840_hal::twim::Frequency::K400,
+//     ///     );
+//     ///     
+//     ///     let lis3dh = Lis3dh::new_i2c(i2c, lis3dh::SlaveAddr::Default).unwrap();
+//     pub fn new_i2c(
+//         i2c: I2C,
+//         address: SlaveAddr,
+//     ) -> Result<Self, Error<E, core::convert::Infallible>> {
+//         Self::new_i2c_with_config(i2c, address, Configuration::default())
+//     }
+
+//     pub fn new_i2c_with_config(
+//         i2c: I2C,
+//         address: SlaveAddr,
+//         config: Configuration,
+//     ) -> Result<Self, Error<E, core::convert::Infallible>> {
+//         let core = Lis3dhI2C {
+//             i2c,
+//             address: address.addr(),
+//         };
+
+//         let mut lis3dh = Lis3dh { core };
+
+//         lis3dh.configure(config)?;
+
+//         Ok(lis3dh)
+//     }
+// }
+
+/******************************************************************************
+Shulltronics embedded-hal 1.0.0 impls
+******************************************************************************/
+impl<I2C> Lis3dh<Lis3dhI2C<I2C>>
 where
-    I2C: WriteRead<Error = E> + i2c::Write<Error = E>,
+    I2C: I2c,
 {
     /// Create a new LIS3DH driver from the given I2C peripheral.
     /// Default is Hz_400 HighResolution.
@@ -97,7 +154,7 @@ where
     pub fn new_i2c(
         i2c: I2C,
         address: SlaveAddr,
-    ) -> Result<Self, Error<E, core::convert::Infallible>> {
+    ) -> Result<Self, Error<<I2C as embedded_hal::i2c::ErrorType>::Error, core::convert::Infallible>> {
         Self::new_i2c_with_config(i2c, address, Configuration::default())
     }
 
@@ -105,7 +162,7 @@ where
         i2c: I2C,
         address: SlaveAddr,
         config: Configuration,
-    ) -> Result<Self, Error<E, core::convert::Infallible>> {
+    ) -> Result<Self, Error<<I2C as embedded_hal::i2c::ErrorType>::Error, core::convert::Infallible>> {
         let core = Lis3dhI2C {
             i2c,
             address: address.addr(),
@@ -769,11 +826,60 @@ pub struct Lis3dhI2C<I2C> {
     address: u8,
 }
 
-impl<I2C, E> Lis3dhCore for Lis3dhI2C<I2C>
+// impl<I2C, E> Lis3dhCore for Lis3dhI2C<I2C>
+// where
+//     I2C: WriteRead<Error = E> + i2c::Write<Error = E>,
+// {
+//     type BusError = E;
+//     type PinError = core::convert::Infallible;
+
+//     /// Read from the registers for each of the 3 axes.
+//     fn read_accel_bytes(&mut self) -> Result<[u8; 6], Error<Self::BusError, Self::PinError>> {
+//         let mut data = [0u8; 6];
+
+//         self.i2c
+//             .write_read(self.address, &[Register::OUT_X_L.addr() | 0x80], &mut data)
+//             .map_err(Error::Bus)
+//             .and(Ok(data))
+//     }
+
+//     /// Write a byte to the given register.
+//     fn write_register(
+//         &mut self,
+//         register: Register,
+//         value: u8,
+//     ) -> Result<(), Error<Self::BusError, Self::PinError>> {
+//         if register.read_only() {
+//             return Err(Error::WriteToReadOnly);
+//         }
+
+//         self.i2c
+//             .write(self.address, &[register.addr(), value])
+//             .map_err(Error::Bus)
+//     }
+
+//     /// Read a byte from the given register.
+//     fn read_register(
+//         &mut self,
+//         register: Register,
+//     ) -> Result<u8, Error<Self::BusError, Self::PinError>> {
+//         let mut data = [0];
+
+//         self.i2c
+//             .write_read(self.address, &[register.addr()], &mut data)
+//             .map_err(Error::Bus)
+//             .and(Ok(data[0]))
+//     }
+// }
+
+/******************************************************************************
+Shulltronics embedded-hal 1.0.0 impls
+******************************************************************************/
+impl<I2C> Lis3dhCore for Lis3dhI2C<I2C>
 where
-    I2C: WriteRead<Error = E> + i2c::Write<Error = E>,
+    I2C: I2c,
 {
-    type BusError = E;
+    type BusError = <I2C as embedded_hal::i2c::ErrorType>::Error;
     type PinError = core::convert::Infallible;
 
     /// Read from the registers for each of the 3 axes.
